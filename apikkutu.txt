@@ -1,0 +1,596 @@
+// ==UserScript==
+// @name         KKUTU INTELLIGENCE (Test Server Only)
+// @namespace    http://tampermonkey.net/
+// @version      12.0.1
+// @description  끄투 테스트 서버 전용 자동 단어 입력 매크로 스크립트입니다.
+// @author       yoruko
+// @match        https://kkutu.co.kr/*
+// @match        https://127.0.0.1/*
+// @match        http://localhost/*
+// @match        https://localhost/*
+// @match        http://xn--ob0b93e2vhxq0od2ztyq1iwv0bzyq8ulqcrw5hbrq9aq3e.xn--3e0b707e/*
+// @match        https://xn--ob0b93e2vhxq0od2ztyq1iwv0bzyq8ulqcrw5hbrq9aq3e.xn--3e0b707e/*
+// @grant        none
+// @run-at       document-idle
+// ==/UserScript==
+
+(function () {
+    'use strict';
+
+    const CONFIG = {
+        MY_NICKNAME: 'Astrix',
+        ALLOWED_HOSTS: [
+            '127.0.0.1',
+            'localhost',
+            'kkutu.ko.kr'
+        ],
+        DB_URL: 'https://raw.githubusercontent.com/Shshshhkak/Kkuuuu/main/Kkkkkuuuuuu.txt',
+        API_BASE: 'https://api.zzo.kr/api/kkutu_serach_api/v1/scan',
+        CACHE_KEY: 'kkutu_bot_test_cache_v12',
+        STATS_KEY: 'kkutu_bot_test_stats_v12',
+    };
+
+    const BLOCKED = [1, 2];
+    const MODES = { END: 'end', FRONT: 'front', DUEL: 'duel' };
+    const CHO = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅊ', 'ㅍ', 'ㅎ'];
+    const JUNG = ['ㅏ', 'ㅐ', 'ㅑ', 'ㅒ', 'ㅓ', 'ㅔ', 'ㅕ', 'ㅖ', 'ㅗ', 'ㅘ', 'ㅙ', 'ㅚ', 'ㅛ', 'ㅜ', 'ㅝ', 'ㅞ', 'ㅟ', 'ㅠ', 'ㅡ', 'ㅢ', 'ㅣ'];
+    const JONG = ['', 'ㄱ', 'ㄲ', 'ㄳ', 'ㄴ', 'ㄵ', 'ㄶ', 'ㄷ', 'ㄹ', 'ㄺ', 'ㄻ', 'ㄼ', 'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ', 'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
+    const HARD_END = { '즘': 10, '늄': 10, '슘': 9, '뮴': 9, '튬': 9, '륨': 9, '큠': 9, '셉': 8, '녘': 8, '뤠': 8, '틔': 7, '힙': 7 };
+
+    function allowed() {
+        const h = location.hostname.toLowerCase();
+        if (BLOCKED.some((r) => r.test(h))) return false;
+        return CONFIG.ALLOWED_HOSTS.some((x) => {
+            const xn = x.toLowerCase();
+            return h === xn || h.endsWith('.' + xn);
+        });
+    }
+    if (!allowed()) return;
+
+    const S = {
+        used: new Set(),
+        dbS: Object.create(null),
+        dbE: Object.create(null),
+        api: Object.create(null),
+        fly: Object.create(null),
+        dbOk: false,
+        lastKey: '',
+        chain: -1,
+        busy: false,
+        on: false,
+        auto: false,
+        pre: new Set(),
+        manual: 'auto',
+        stat: { ok: 0, fail: 0 },
+        cfg: {
+            min_length: 2, max_length: 100, mission: '', manner: true, attack: false,
+            gentle: false, injeong: false, initial_sound_rule: false, etiquette: false,
+            sweet: false, theme: '', end: '', endOpt: false, preOn: true,
+            duelStart: '', duelEnd: '',
+        },
+    };
+
+    let pureDispatch, cleanSetter, CompEvt, KeyEvt, cachedIn;
+
+    // 두음법칙 계산 함수
+    function dueum(ch) {
+        const o = [ch];
+        if (!ch) return o;
+        const c = ch.charCodeAt(0) - 0xac00;
+        if (c < 0 || c > 11171) return o;
+        const cho = (c / 588) | 0;
+        const jung = ((c % 588) / 28) | 0;
+        const jong = c % 28;
+        const y = [2, 3, 6, 7, 12, 17, 20].includes(jung);
+        if (cho === 2 && y) o.push(String.fromCharCode(0xac00 + 11 * 588 + jung * 2 8 + jong));
+        if (cho === 5) o.push(String.fromCharCode(0xac00 + (y ? 11 : 2) * 588 + jung * 28 + jong));
+        if (cho === 11 && y) o.push(String.fromCharCode(0xac00 + 2 * 588 + jung * 28 + jong));
+        if (cho === 2 && !y) o.push(String.fromCharCode(0xac00 + 5 * 588 + jung * 28 + jong));
+        return [...new Set(o)];
+    }
+
+    function decomp(ch) {
+        const c = ch.charCodeAt(0) - 0xac00;
+        if (c < 0 || c > 11171) return [ch];
+        const cho = (c / 588) | 0;
+        const jung = ((c % 588) / 28) | 0;
+        const jong = c % 28;
+        const r = [CHO[cho], JUNG[jung]];
+        if (jong) r.push(JONG[jong]);
+        return r;
+    }
+
+    function steps(word) {
+        const out = [];
+        let cur = '';
+        for (const ch of word) {
+            const j = decomp(ch);
+            cur += j[0];
+            out.push(cur);
+            if (j.length >= 2) {
+                cur = cur.slice(0, -1) + String.fromCharCode(0xac00 + CHO.indexOf(j[0]) * 588 + JUNG.indexOf(j[1]) * 28);
+                out.push(cur);
+            }
+            if (j.length === 3) {
+                cur = cur.slice(0, -1) + String.fromCharCode(0xac00 + CHO.indexOf(j[0]) * 588 + JUNG.indexOf(j[1]) * 28 + JONG.indexOf(j[2]));
+                out.push(cur);
+            }
+        }
+        return out;
+    }
+
+    // 게임 모드 감지 (끝말잇기, 앞말잇기, 타자대결 등)
+    function gameMode() {
+        if (S.manual !== 'auto') return S.manual;
+        try {
+            const rule = (typeof RoomBoxVue !== 'undefined' && RoomBoxVue.room && RoomBoxVue.room.rule) || (typeof $data !== 'undefined' && $data.rule);
+            if (rule) {
+                if (rule.akku || rule.akkutu) return MODES.FRONT;
+                if (rule.duel || rule.wordduel) return MODES.DUEL;
+            }
+        } catch (_) {}
+        const t = document.title + document.body.innerText.slice(0, 300);
+        if (t.includes('앞말잇기')) return MODES.FRONT;
+        if (t.includes('타자 대결') || t.includes('대결')) return MODES.DUEL;
+        return MODES.END;
+    }
+
+    function ck(m, ch) { return m + ':' + ch; }
+    function bucket(m, ch) {
+        const k = ck(m, ch);
+        if (!S.api[k]) S.api[k] = new Set();
+        return S.api[k];
+    }
+
+    function loadCache() {
+        try {
+            const raw = localStorage.getItem(CONFIG.CACHE_KEY);
+            if (raw) {
+                const p = JSON.parse(raw);
+                for (const k in p) S.api[k] = new Set(p[k]);
+            }
+            const st = localStorage.getItem(CONFIG.STATS_KEY);
+            if (st) Object.assign(S.stat, JSON.parse(st));
+        } catch (_) {}
+    }
+
+    function saveCache() {
+        try {
+            const o = {};
+            for (const k in S.api) o[k] = [...S.api[k]];
+            localStorage.setItem(CONFIG.CACHE_KEY, JSON.stringify(o));
+            localStorage.setItem(CONFIG.STATS_KEY, JSON.stringify(S.stat));
+        } catch (_) {}
+    }
+
+    // 끄투 보안 및 입력 감지 우회용 iframe 핵
+    function iframeHack() {
+        const f = document.createElement('iframe');
+        f.style.display = 'none';
+        document.documentElement.appendChild(f);
+        const w = f.contentWindow;
+        pureDispatch = w.EventTarget.prototype.dispatchEvent;
+        cleanSetter = Object.getOwnPropertyDescriptor(w.HTMLInputElement.prototype, 'value').set;
+        CompEvt = w.CompositionEvent;
+        KeyEvt = w.KeyboardEvent;
+    }
+
+    function realInput() {
+        if (cachedIn && document.body.contains(cachedIn)) return cachedIn;
+        if (typeof $stage !== 'undefined' && $stage.talk && $stage.talk[0]) {
+            const el = $stage.talk[0];
+            const id = el.id || '';
+            if (id.includes('Massage') && !id.toLowerCase().includes('talkf')) {
+                cachedIn = el;
+                return el;
+            }
+        }
+        for (const el of document.querySelectorAll('input, textarea')) {
+            const id = el.id || '';
+            if (!el.offsetParent || id.toLowerCase().includes('talkf')) continue;
+            if (id.includes('Massage') || id === 'ChatInput') {
+                cachedIn = el;
+                return el;
+            }
+        }
+        return null;
+    }
+
+    function talkEls() {
+        const a = [];
+        if (typeof $stage !== 'undefined') {
+            if ($stage.talk && $stage.talk[0]) a.push($stage.talk[0]);
+            if ($stage.game && $stage.game.hereText && $stage.game.hereText[0]) a.push($stage.game.hereText[0]);
+        }
+        return a;
+    }
+
+    function bumpTcnt(word) {
+        if (typeof $data === 'undefined') return;
+        $data._tcnt = word.length;
+        const o = { key: 'a', keyCode: 65, which: 65, bubbles: true };
+        for (let i = 0; i < word.length; i++) {
+            for (const el of talkEls()) {
+                try { el.dispatchEvent(new KeyboardEvent('keyup', o)); } catch (_) {}
+            }
+        }
+    }
+
+    function syncVal(word) {
+        if (typeof $stage === 'undefined') return;
+        try {
+            if ($stage.talk) $stage.talk.val(word);
+            if ($stage.game && $stage.game.hereText) $stage.game.hereText.val(word);
+        } catch (_) {}
+    }
+
+    // 가상으로 한글 타이핑 이벤트를 발생시켜 단어를 자동 입력하는 핵심 함수
+    async function typeWord(input, word) {
+        input.focus();
+        pureDispatch.call(input, new CompEvt('compositionstart', { bubbles: true, data: '' }));
+        for (const step of steps(word)) {
+            cleanSetter.call(input, step);
+            pureDispatch.call(input, new CompEvt('compositionupdate', { bubbles: true, data: step }));
+            pureDispatch.call(input, new Event('input', { bubbles: true }));
+        }
+        pureDispatch.call(input, new CompEvt('compositionend', { bubbles: true, data: word }));
+        cleanSetter.call(input, word);
+        pureDispatch.call(input, new Event('input', { bubbles: true }));
+        syncVal(word);
+        bumpTcnt(word);
+        await new Promise((r) => setTimeout(r, 25));
+        const enter = { key: 'Enter', keyCode: 13, which: 13, bubbles: true };
+        for (const t of ['keydown', 'keypress', 'keyup']) pureDispatch.call(input, new KeyEvt(t, enter));
+    }
+
+    async function sendWord(input, word) {
+        bumpTcnt(word);
+        await typeWord(input, word);
+        if (typeof $stage !== 'undefined' && $stage.chatBtn && $stage.chatBtn[0]) {
+            await new Promise((r) => setTimeout(r, 15));
+            try { $stage.chatBtn[0].click(); } catch (_) {}
+        }
+    }
+
+    // 외부 저장소에서 단어 DB 로드
+    async function loadDb() {
+        try {
+            const res = await fetch(CONFIG.DB_URL, { signal: AbortSignal.timeout(30000) });
+            for (const raw of (await res.text()).split(/[\s,\n\r]+/)) {
+                const w = raw.trim();
+                if (w.length < 2) continue;
+                if (!S.dbS[w[0]]) S.dbS[w[0]] = new Set();
+                if (!S.dbE[w[w.length - 1]]) S.dbE[w[w.length - 1]] = new Set();
+                S.dbS[w[0]].add(w);
+                S.dbE[w[w.length - 1]].add(w);
+            }
+        } catch (e) {
+            console.warn('[KKUTU BOT] DB Load Error', e);
+        } finaly {
+            S.dbOk = true;
+            paint();
+        }
+    }
+
+    function canCont(ch, m) {
+        for (const c of dueum(ch)) {
+            if (S.api[ck(m, c)] && S.api[ck(m, c)].size) return true;
+            if (m === MODES.FRONT ? S.dbE[c] : S.dbS[c]) return true;
+        }
+        return false;
+    }
+
+    // 단어 점수 계산 알고리즘 (미션 글자 우선 선택, 공격 단어 가점 등)
+    function score(word, m) {
+        let s = canCont(word[word.length - 1], m) ? 1e5 : -1e6;
+        const miss = S.cfg.mission;
+        if (miss) {
+            const esc = miss.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            s += ((word.match(new RegExp(esc, 'g')) || []).length) * 5e4;
+        }
+        s += word.length * 100;
+        if (S.cfg.endOpt && S.cfg.attack) s += (HARD_END[word[word.length - 1]] || 0) * 10;
+        return s;
+    }
+
+    function best(list, m) {
+        if (!list.length) return null;
+        let w = list[0];
+        let bs = score(w, m);
+        for (let i = 1; i < list.length; i++) {
+            const sc = score(list[i], m);
+            if (sc > bs) { w = list[i]; bs = sc; }
+        }
+        return w;
+    }
+
+    function pick(sets, m) {
+        const { min_length, max_length } = S.cfg;
+        const list = [];
+        for (const set of sets) {
+            if (!set) continue;
+            for (const w of set) {
+                if (S.used.has(w) || w.length < min_length || w.length > max_length) continue;
+                list.push(w);
+            }
+        }
+        return best(list, m);
+    }
+
+    function local(m, ch) {
+        return pick(dueum(ch).map((c) => (m === MODES.FRONT ? S.dbE[c] : S.dbS[c])), m);
+    }
+
+    function cached(m, ch) {
+        return pick(dueum(ch).map((c) => bucket(m, c)), m);
+    }
+
+    function apiUrl(m, ch) {
+        const p = new URLSearchParams();
+        const c = S.cfg;
+        if (m === MODES.FRONT) p.set('end', ch);
+        else if (m === MODES.DUEL) {
+            if (c.duelStart) p.set('start', c.duelStart);
+            if (c.duelEnd) p.set('end', c.duelEnd);
+            if (!c.duelStart && !c.duelEnd) p.set('start', ch);
+        } else p.set('start', ch);
+        if (c.end && m !== MODES.FRONT) p.set('end', c.end);
+        p.set('min_length', String(c.min_length));
+        p.set('max_length', String(c.max_length));
+        if (c.mission) p.set('mission', c.mission);
+        p.set('manner', String(c.manner));
+        p.set('attack', String(c.attack));
+        p.set('gentle', String(c.gentle));
+        p.set('injeong', String(c.injeong));
+        p.set('initial_sound_rule', String(c.initial_sound_rule));
+        p.set('etiquette', String(c.etiquette));
+        p.set('sweet', String(c.sweet));
+        if (c.theme) p.set('theme', c.theme);
+        if (S.used.size) p.set('blacklist', [...S.used].join(','));
+        return CONFIG.API_BASE + '?' + p.toString();
+    }
+
+    // 족보 API 서버에서 단어 검색 및 로드
+    async function fetchApi(m, ch) {
+        const k = ck(m, ch);
+        if (S.fly[k]) return S.fly[k];
+        const p = (async () => {
+            for (let i = 0; i < 3; i++) {
+                try {
+                    const res = await fetch(apiUrl(m, ch), { signal: AbortSignal.timeout(4500) });
+                    const data = await res.json();
+                    const words = Array.isArray(data) ? data : (data.words || data.result || []);
+                    const b = bucket(m, ch);
+                    for (const w of words) b.add(w);
+                    if (words.length) saveCache();
+                    return;
+                } catch (_) {
+                    if (i < 2) await new Promise((r) => setTimeout(r, 200 * (i + 1)));
+                }
+            }
+        })().finally(() => { delete S.fly[k]; });
+        S.fly[k] = p;
+        return p;
+    }
+
+    function prefetch(word, m) {
+        if (!S.cfg.preOn || !word) return;
+        const tail = word[word.length - 1];
+        const nm = m === MODES.FRONT ? MODES.FRONT : MODES.END;
+        for (const c of dueum(tail)) {
+            const k = ck(nm, c);
+            if (S.pre.has(k) || (S.api[k] && S.api[k].size >= 25)) continue;
+            S.pre.add(k);
+            fetchApi(nm, c).finally(() => S.pre.delete(k));
+        }
+    }
+
+    async function findWord(ch, m) {
+        let w = cached(m, ch) || local(m, ch);
+        if (w) return w;
+        await Promise.all(dueum(ch).map((c) => fetchApi(m, c)));
+        return cached(m, ch) || local(m, ch);
+    }
+
+    function resetRound() {
+        S.used.clear();
+        S.lastKey = '';
+        S.busy = false;
+        paint();
+    }
+
+    function checkRound() {
+        const el = document.querySelector('.chain, .chain-count, [class*="chain"]');
+        if (!el) return;
+        const n = parseInt((el.textContent || '').trim(), 10) || 0;
+        if (n === 0 && S.chain > 0) resetRound();
+        S.chain = n;
+    }
+
+    // 이미 사용된 단어 수집하여 중복 입력 방지
+    function scanLogs() {
+        document.querySelectorAll('.history-item:not(.bot-x), .game-history-item:not(.bot-x)').forEach((n) => {
+            n.classList.add('bot-x');
+            let t = (n.innerText || '').trim();
+            if (t.includes(':')) t = t.slice(t.indexOf(':') + 1).trim();
+            const m = t.match(/^[가-힣]+/);
+            if (m && m[0].length >= 2) S.used.add(m[0]);
+        });
+    }
+
+    function targetChar(el) {
+        const t = (el.innerText || el.textContent || '').trim();
+        const x = t.match(/[가-힣](?=[^가-힣]*$)/) || t.match(/[가-힣]/);
+        return x ? x[0] : '';
+    }
+
+    function readMission() {
+        const el = document.querySelector('.mission, .game-mission, [class*="mission"]');
+        if (!el) return;
+        const m = (el.innerText || '').match(/[가-힣A-Z0-9]/);
+        if (m) S.cfg.mission = m[0];
+    }
+
+    // 내 턴인지 확인하는 함수
+    function myTurn() {
+        for (const sel of ['.game-user-current .game-user-name', '.game-info-user.active .game-info-nick']) {
+            const el = document.querySelector(sel);
+            if (el && (el.innerText || '').includes(CONFIG.MY_NICKNAME)) return true;
+        }
+        try {
+            if (typeof $data !== 'undefined' && typeof $data.myid !== 'undefined') {
+                return ($data.turn || ($data.room && $data.room.turn)) === $data.myid;
+            }
+        } catch (_) {}
+        return false;
+    }
+
+    // 매크로 메인 루프 연산
+    async function loop() {
+        if (!S.dbOk || S.busy) return;
+        const input = realInput();
+        const disp = document.querySelector('.jjo-display, .j-char, #char, .game-word-display');
+        const active = !!(input || disp);
+        if (active && !S.on) { S.on = true; paint(); }
+        if (!active && S.on) { S.on = false; resetRound(); return; }
+        if (!S.on || !S.auto) return;
+
+        const m = gameMode();
+        readMission();
+        if (!disp) return;
+        const ch = targetChar(disp);
+        if (!ch) return;
+        const key = m + ':' + ch;
+        if (key === S.lastKey || !myTurn() || !input || input.readOnly) return;
+
+        S.lastKey = key;
+        S.busy = true;
+        const word = await findWord(ch, m);
+        if (word) {
+            S.used.add(word);
+            S.stat.ok++;
+            saveCache();
+            prefetch(word, m);
+            await sendWord(input, word);
+        } else {
+            S.stat.fail++;
+            saveCache();
+        }
+        S.busy = false;
+        paint();
+    }
+
+    // 화면에 띄워줄 컨트롤 GUI 생성 함수
+    function gui() {
+        if (document.getElementById('kkutu-bot-gui')) return;
+        const box = document.createElement('div');
+        box.id = 'kkutu-bot-gui';
+        box.innerHTML = [
+            '<div id="kkg - h"><b>KKUTU TEST v12</b> <small id="kkg-host"></small> <span id="kkg-min">-</span></div>',
+            '<div id="kkg-b">',
+            '<div><i id="kkg-dot"></i> <span id="kkg-st">...</span></div>',
+            '<div>사용한 단어: <b id="kkg-used">0</b> | 성공: <b id="kkg-ok" class="g">0</b> | 실패: <b id="kkg-fail" class="r">0</b> | 모드: <b id="kkg-md">-</b></div>',
+            '<select id="kkg-mode"><option value="auto">자동 감지</option><option value="end">끝말잇기</option>',
+            '<option value="front">앞말잇기</option><option value="duel">타자대결</option></select>',
+            '<label><input type="checkbox" id="kkg-atk"> 공격 우선</label>',
+            '<label><input type="checkbox" id="kkg-man" checked> 매너 단어</label>',
+            '<label><input type="checkbox" id="kkg-eo"> 한방 단어</label>',
+            '<label><input type="checkbox" id="kkg-pf" checked> 단어 예측</label>',
+            '<div>미션: <input id="kkg-mis" maxlength="1" size="2"> | 끝말: <input id="kkg-end" maxlength="1" size="2"></div>',
+            '<div>글자수: <input id="kkg-min-len" type="number" value="2" min="1" max="99" style="width:40px;">',
+            ' ~ <input id="kkg-max-len" type="number" value="100" min="1" max="100" style="width:40px;"></div>',
+            '<div id="kkg-duel" style="display:none;">시작: <input id="kkg-ds" maxlength="1" size="2"> ',
+            '끝: <input id="kkg-de" maxlength="1" size="2"></div>',
+            '<button id="kkg-go" type="button">매크로 OFF</button>',
+            '<button id="kkg-rst" type="button">라운드 초기화</button>',
+            '</div>'
+        ].join('');
+
+        const css = document.createElement('style');
+        css.textContent = '#kkutu-bot-gui { position: fixed; top: 56px; right: 12px; z-index: 2147483646; width: 210px; background: #0c1018f2; border: 1px solid #3d8bfd55; border-radius: 8px; padding: 8px; font: 12px sans-serif; color: #e8ecf4 } #kkg-h { display: flex; justify-content: space-between; cursor: move; margin-bottom: 6px } #kkg-b { display: flex; flex-direction: column; gap: 4px } .g { color: #6bcf7f } .r { color: #e87878 } #kkg-go.on { background: #1e4620 } #kkutu-bot-gui.min #kkg-b { display: none } #kkg-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #f0ad4e; margin-right: 4px } #kkg-dot.on { background: #5cb85c }';
+
+        document.head.appendChild(css);
+        document.body.appendChild(box);
+
+        document.getElementById('kkg-host').textContent = location.hostname.slice(0, 14);
+        document.getElementById('kkg-go').onclick = () => { S.auto = !S.auto; paint(); };
+        document.getElementById('kkg-rst').onclick = () => resetRound();
+        document.getElementById('kkg-min').onclick = () => box.classList.toggle('min');
+        document.getElementById('kkg-mis').oninput = (e) => { S.cfg.mission = e.target.value; };
+        document.getElementById('kkg-end').oninput = (e) => { S.cfg.end = e.target.value; };
+        document.getElementById('kkg-atk').onchange = (e) => { S.cfg.attack = e.target.checked; };
+        document.getElementById('kkg-man').onchange = (e) => { S.cfg.manner = e.target.checked; };
+        document.getElementById('kkg-eo').onchange = (e) => { S.cfg.endOpt = e.target.checked; };
+        document.getElementById('kkg-pf').onchange = (e) => { S.cfg.preOn = e.target.checked; };
+        document.getElementById('kkg-ds').oninput = (e) => { S.cfg.duelStart = e.target.value; };
+        document.getElementById('kkg-de').oninput = (e) => { S.cfg.duelEnd = e.target.value; };
+        document.getElementById('kkg-mode').onchange = (e) => {
+            S.manual = e.target.value;
+            document.getElementById('kkg-duel').style.display = e.target.value === 'duel' ? 'block' : 'none';
+        };
+        document.getElementById('kkg-min-len').oninput = (e) => { S.cfg.min_length = parseInt(e.target.value, 10) || 2; };
+        document.getElementById('kkg-max-len').oninput = (e) => { S.cfg.max_length = parseInt(e.target.value, 10) || 100; };
+
+        // GUI 드래그 이동 기능
+        let drag = false, ox = 0, oy = 0;
+        document.getElementById('kkg-h').addEventListener('mousedown', (e) => {
+            drag = true;
+            const r = box.getBoundingClientRect();
+            ox = e.clientX - r.left;
+            oy = e.clientY - r.top;
+        });
+        document.addEventListener('mousemove', (e) => {
+            if (!drag) return;
+            box.style.right = 'auto';
+            box.style.left = (e.clientX - ox) + 'px';
+            box.style.top = (e.clientY - oy) + 'px';
+        });
+        document.addEventListener('mouseup', () => { drag = false; });
+    }
+
+    function modeName(m) {
+        return m === MODES.FRONT ? '앞말잇기' : m === MODES.DUEL ? '타자대결' : '끝말잇기';
+    }
+
+    // UI 갱신 함수
+    function paint() {
+        const dot = document.getElementById('kkg-dot');
+        const st = document.getElementById('kkg-st');
+        if (!dot) return;
+        dot.className = S.on || S.busy ? 'on' : '';
+        st.textContent = !S.dbOk ? 'DB 로드중...' : S.busy ? '탐색중...' : S.on ? (S.auto ? '자동 실행중' : '대기중') : '꺼짐';
+
+        const u = document.getElementById('kkg-used');
+        const o = document.getElementById('kkg-ok');
+        const f = document.getElementById('kkg-fail');
+        const md = document.getElementById('kkg-md');
+        const go = document.getElementById('kkg-go');
+
+        if (u) u.textContent = String(S.used.size);
+        if (o) o.textContent = String(S.stat.ok);
+        if (f) f.textContent = String(S.stat.fail);
+        if (md) md.textContent = modeName(gameMode());
+        if (go) {
+            go.textContent = S.auto ? '매크로 ON' : '매크로 OFF';
+            go.classList.toggle('on', S.auto);
+        }
+    }
+
+    // 프로그램 시작 부팅 함수
+    function boot() {
+        if (!document.body) { setTimeout(boot, 50); return; }
+        iframeHack();
+        loadCache();
+        gui();
+        paint();
+        loadDb().then(() => {
+            setInterval(scanLogs, 200);
+            setInterval(loop, 40);
+            setInterval(checkRound, 250);
+            setInterval(paint, 400);
+        });
+        console.log('[KKUTU BOT] test-only booted on:', location.hostname);
+    }
+
+    boot();
+})();
