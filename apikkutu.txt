@@ -1,13 +1,14 @@
 // ==UserScript==
 // @name         KKUTU INTELLIGENCE (Test Server Only - Patched)
 // @namespace    http://tampermonkey.net/
-// @version      12.0.2
-// @description  끄투 본서버 작동이 차단된 로컬 테스트 전용 스크립트입니다.
+// @version      12.1.0
+// @description  Kkutu test server only (localhost). Blocked on kkutu.co.kr.
 // @author       yoruko
 // @match        http://kkutu.co.kr/*
 // @match        https://kkutu.co.kr/*
 // @match        http://localhost/*
 // @match        https://localhost/*
+// @match        *://127.0.0.1/*
 // @grant        none
 // @run-at       document-idle
 // ==/UserScript==
@@ -17,10 +18,7 @@
 
     const CONFIG = {
         MY_NICKNAME: 'Astrix',
-        ALLOWED_HOSTS: [
-            '127.0.0.1',
-            'localhost'
-        ],
+        ALLOWED_HOSTS: ['127.0.0.1', 'kkutu.co.kr'],
         DB_URL: 'https://raw.githubusercontent.com/Shshshhkak/Kkuuuu/main/Kkkkkuuuuuu.txt',
         API_BASE: 'https://api.zzo.kr/api/kkutu_serach_api/v1/scan',
         CACHE_KEY: 'kkutu_bot_test_cache_v12',
@@ -29,23 +27,32 @@
 
     const BLOCKED = [1, 2];
     const MODES = { END: 'end', FRONT: 'front', DUEL: 'duel' };
-    const CHO = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅊ', 'ㅍ', 'ㅎ'];
+
+    // 유니코드(\uXXXX)에서 UTF-8 한글로 변환
+    const CHO = ['ㄱ', 'ㄲ', 'ㄴ', 'ㄷ', 'ㄸ', 'ㄹ', 'ㅁ', 'ㅂ', 'ㅃ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅉ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
     const JUNG = ['ㅏ', 'ㅐ', 'ㅑ', 'ㅒ', 'ㅓ', 'ㅔ', 'ㅕ', 'ㅖ', 'ㅗ', 'ㅘ', 'ㅙ', 'ㅚ', 'ㅛ', 'ㅜ', 'ㅝ', 'ㅞ', 'ㅟ', 'ㅠ', 'ㅡ', 'ㅢ', 'ㅣ'];
     const JONG = ['', 'ㄱ', 'ㄲ', 'ㄳ', 'ㄴ', 'ㄵ', 'ㄶ', 'ㄷ', 'ㄹ', 'ㄺ', 'ㄻ', 'ㄼ', 'ㄽ', 'ㄾ', 'ㄿ', 'ㅀ', 'ㅁ', 'ㅂ', 'ㅄ', 'ㅅ', 'ㅆ', 'ㅇ', 'ㅈ', 'ㅊ', 'ㅋ', 'ㅌ', 'ㅍ', 'ㅎ'];
-    const HARD_END = { '즘': 10, '늄': 10, '슘': 9, '뮴': 9, '튬': 9, '륨': 9, '큠': 9, '셉': 8, '녘': 8, '뤠': 8, '틔': 7, '힙': 7 };
+
+    // 공격용 방어 불가/한방 단어 점수 설정 변환
+    const HARD_END = { '즘': 10, '름': 10, '슈': 9, '뮨': 9, '틔': 9, '륨': 9, '큰': 9, '샾': 8, '녘': 8, '롄': 8, '듸': 7, '합': 7 };
+
+    const L_FRONT = '앞말잇기';
+    const L_DUEL = '타자 대결';
+    const L_DUEL2 = '대결';
+
+    const RE_HANGUL = /[\uAC00-\uD7A3]/;
+    const RE_WORD = /^[\uAC00-\uD7A3]+/;
+    const RE_MISSION = /미션\s*[:：]?\s*([\uAC00-\uD7A3A-Z0-9])/i;
 
     function allowed() {
         const h = location.hostname.toLowerCase();
-        // kkutu.kr 도메인이 포함되어 있거나 비허용 목록인 경우 차단
-        if (h.includes('kkutu.co.kr') || h.includes('kkutu.ko.kr')) return false;
+        if (h.includes('kkutu.kr') || h.includes('kkutu.kr')) return false;
         if (BLOCKED.some((r) => typeof r.test === 'function' && r.test(h))) return false;
         return CONFIG.ALLOWED_HOSTS.some((x) => {
             const xn = x.toLowerCase();
             return h === xn || h.endsWith('.' + xn);
         });
     }
-
-    // 본 서버 진입 시 실행 자체를 즉시 영구 종료
     if (!allowed()) {
         console.log('[KKUTU BOT] This domain is NOT allowed. Script execution halted.');
         return;
@@ -60,6 +67,8 @@
         dbOk: false,
         lastKey: '',
         chain: -1,
+        lastWord: '',
+        lastScore: 0,
         busy: false,
         on: false,
         auto: false,
@@ -132,8 +141,8 @@
             }
         } catch (_) {}
         const t = document.title + document.body.innerText.slice(0, 300);
-        if (t.includes('앞말잇기')) return MODES.FRONT;
-        if (t.includes('타자 대결') || t.includes('대결')) return MODES.DUEL;
+        if (t.includes(L_FRONT)) return MODES.FRONT;
+        if (t.includes(L_DUEL) || t.includes(L_DUEL2)) return MODES.DUEL;
         return MODES.END;
     }
 
@@ -279,14 +288,51 @@
         return false;
     }
 
-    function score(word, m) {
-        let s = canCont(word[word.length - 1], m) ? 1e5 : -1e6;
+    function missionHits(word) {
         const miss = S.cfg.mission;
-        if (miss) {
-            const esc = miss.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            s += ((word.match(new RegExp(esc, 'g')) || []).length) * 5e4;
+        if (!miss) return 0;
+        const esc = miss.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return (word.match(new RegExp(esc, 'g')) || []).length;
+    }
+
+    function timeRatio() {
+        try {
+            if (typeof $data !== 'undefined') {
+                const room = $data.room;
+                const limit = $data.timeLimit ?? $data.timelimit
+                    ?? (room && (room.timeLimit ?? room.timelimit ?? room.limit));
+                const left = $data.time ?? (room && room.time);
+                if (typeof left === 'number' && typeof limit === 'number' && limit > 0) {
+                    return Math.max(0, Math.min(1, left / limit));
+                }
+            }
+        } catch (_) {}
+        for (const sel of ['.timer-fill', '.game-timer-inner', '.jjo-timer .fill', '[class*="timer"] [class*="fill"]', '.time-progress', '.turn-timer']) {
+            const el = document.querySelector(sel);
+            if (!el) continue;
+            const sw = el.style && el.style.width;
+            if (sw && sw.endsWith('%')) {
+                const p = parseFloat(sw) / 100;
+                if (!Number.isNaN(p)) return Math.max(0, Math.min(1, p));
+            }
+            const tr = el.getBoundingClientRect();
+            const pr = el.parentElement && el.parentElement.getBoundingClientRect();
+            if (pr && pr.width > 0) return Math.max(0, Math.min(1, tr.width / pr.width));
         }
-        s += word.length * 100;
+        return 1;
+    }
+
+    function kkutuScore(word) {
+        const mc = missionHits(word);
+        const len = word.length;
+        const chain = Math.max(0, S.chain);
+        const tr = timeRatio();
+        return Math.round(((mc + 2) * Math.pow(7 * len + 5, 0.74)) + 0.88 * chain * (tr + 1));
+    }
+
+    function score(word, m) {
+        let s = kkutuScore(word);
+        if (!canCont(word[word.length - 1], m)) s -= 1e9;
         if (S.cfg.endOpt && S.cfg.attack) s += (HARD_END[word[word.length - 1]] || 0) * 10;
         return s;
     }
@@ -315,13 +361,8 @@
         return best(list, m);
     }
 
-    function local(m, ch) {
-        return pick(dueum(ch).map((c) => (m === MODES.FRONT ? S.dbE[c] : S.dbS[c])), m);
-    }
-
-    function cached(m, ch) {
-        return pick(dueum(ch).map((c) => bucket(m, c)), m);
-    }
+    function local(m, ch) { return pick(dueum(ch).map((c) => (m === MODES.FRONT ? S.dbE[c] : S.dbS[c])), m); }
+    function cached(m, ch) { return pick(dueum(ch).map((c) => bucket(m, c)), m); }
 
     function apiUrl(m, ch) {
         const p = new URLSearchParams();
@@ -392,6 +433,8 @@
     function resetRound() {
         S.used.clear();
         S.lastKey = '';
+        S.lastWord = '';
+        S.lastScore = 0;
         S.busy = false;
         paint();
     }
@@ -409,22 +452,54 @@
             n.classList.add('bot-x');
             let t = (n.innerText || '').trim();
             if (t.includes(':')) t = t.slice(t.indexOf(':') + 1).trim();
-            const m = t.match(/^[가-힣]+/);
+            const m = t.match(RE_WORD);
             if (m && m[0].length >= 2) S.used.add(m[0]);
         });
     }
 
     function targetChar(el) {
         const t = (el.innerText || el.textContent || '').trim();
-        const x = t.match(/[가-힣](?=[^가-힣]*$)/) || t.match(/[가-힣]/);
+        const x = t.match(/[\uAC00-\uD7A3](?=[^\uAC00-\uD7A3]*$)/) || t.match(RE_HANGUL);
         return x ? x[0] : '';
     }
 
+    function syncMissionGui() {
+        const el = document.getElementById('kkg-mis');
+        if (el && el.value !== S.cfg.mission) el.value = S.cfg.mission;
+        const md = document.getElementById('kkg-mis-d');
+        if (md) md.textContent = S.cfg.mission || '-';
+    }
+
     function readMission() {
-        const el = document.querySelector('.mission, .game-mission, [class*="mission"]');
-        if (!el) return;
-        const m = (el.innerText || '').match(/[가-힣A-Z0-9]/);
-        if (m) S.cfg.mission = m[0];
+        let found = '';
+        try {
+            if (typeof $data !== 'undefined') {
+                const m = $data.mission ?? $data.missionChar ?? $data.missionchar
+                    ?? ($data.room && ($data.room.mission ?? $data.room.missionChar));
+                if (m && String(m).length) found = String(m)[0];
+            }
+            if (!found && typeof RoomBoxVue !== 'undefined' && RoomBoxVue.room) {
+                const m = RoomBoxVue.room.mission ?? RoomBoxVue.room.missionChar;
+                if (m && String(m).length) found = String(m)[0];
+            }
+        } catch (_) {}
+        if (!found) {
+            for (const sel of ['.mission', '.game-mission', '[class*="mission"]', '.jjo-mission', '#mission', '.rule-mission']) {
+                const el = document.querySelector(sel);
+                if (!el) continue;
+                const t = (el.innerText || el.textContent || '').trim();
+                const hit = t.match(RE_MISSION)
+                    || t.match(/(?:letter|char)\s*[:：]?\s*([\uAC00-\uD7A3A-Z0-9])/i)
+                    || t.match(/[\uAC00-\uD7A3A-Z0-9](?=\s*$)/);
+                if (hit) { found = hit[1] || hit[0]; break; }
+                const one = t.match(/[\uAC00-\uD7A3A-Z0-9]/);
+                if (one && t.length <= 6) { found = one[0]; break; }
+            }
+        }
+        if (found && found !== S.cfg.mission) {
+            S.cfg.mission = found;
+            syncMissionGui();
+        }
     }
 
     function myTurn() {
@@ -448,7 +523,6 @@
         if (active && !S.on) { S.on = true; paint(); }
         if (!active && S.on) { S.on = false; resetRound(); return; }
         if (!S.on || !S.auto) return;
-
         const m = gameMode();
         readMission();
         if (!disp) return;
@@ -456,12 +530,13 @@
         if (!ch) return;
         const key = m + ':' + ch;
         if (key === S.lastKey || !myTurn() || !input || input.readOnly) return;
-
         S.lastKey = key;
         S.busy = true;
         const word = await findWord(ch, m);
         if (word) {
             S.used.add(word);
+            S.lastWord = word;
+            S.lastScore = kkutuScore(word);
             S.stat.ok++;
             saveCache();
             prefetch(word, m);
@@ -475,43 +550,40 @@
     }
 
     function gui() {
-        // 허용되지 않은 환경(예: 본서버)이라면 엘리먼트 렌더링 자체를 스킵합니다.
         if (!allowed() || document.getElementById('kkutu-bot-gui')) return;
-        
         const box = document.createElement('div');
         box.id = 'kkutu-bot-gui';
         box.innerHTML = [
-            '<div id="kkg-h"><b>KKUTU TEST v12</b> <small id="kkg-host"></small> <span id="kkg-min">-</span></div>',
+            '<div id="kkg-h"><b>KKUTU TEST v12.1</b> <small id="kkg-host"></small> <span id="kkg-min">-</span></div>',
             '<div id="kkg-b">',
             '<div><i id="kkg-dot"></i> <span id="kkg-st">...</span></div>',
-            '<div>사용한 단어: <b id="kkg-used">0</b> | 성공: <b id="kkg-ok" class="g">0</b> | 실패: <b id="kkg-fail" class="r">0</b> | 모드: <b id="kkg-md">-</b></div>',
-            '<select id="kkg-mode"><option value="auto">자동 감지</option><option value="end">끝말잇기</option>',
-            '<option value="front">앞말잇기</option><option value="duel">타자대결</option></select>',
-            '<label><input type="checkbox" id="kkg-atk"> 공격 우선</label>',
-            '<label><input type="checkbox" id="kkg-man" checked> 매너 단어</label>',
-            '<label><input type="checkbox" id="kkg-eo"> 한방 단어</label>',
-            '<label><input type="checkbox" id="kkg-pf" checked> 단어 예측</label>',
-            '<div>미션: <input id="kkg-mis" maxlength="1" size="2"> | 끝말: <input id="kkg-end" maxlength="1" size="2"></div>',
-            '<div>글자수: <input id="kkg-min-len" type="number" value="2" min="1" max="99" style="width:40px;">',
+            '<div>used: <b id="kkg-used">0</b> | ok: <b id="kkg-ok" class="g">0</b> | fail: <b id="kkg-fail" class="r">0</b> | mode: <b id="kkg-md">-</b></div>',
+            '<div>mission: <b id="kkg-mis-d">-</b> | chain: <b id="kkg-chain">0</b> | time: <b id="kkg-time">-</b>%</div>',
+            '<div>score: <b id="kkg-score">-</b> | word: <b id="kkg-lastw">-</b></div>',
+            '<select id="kkg-mode"><option value="auto">auto</option><option value="end">end</option>',
+            '<option value="front">front</option><option value="duel">duel</option></select>',
+            '<label><input type="checkbox" id="kkg-atk"> attack</label>',
+            '<label><input type="checkbox" id="kkg-man" checked> manner</label>',
+            '<label><input type="checkbox" id="kkg-eo"> endOpt</label>',
+            '<label><input type="checkbox" id="kkg-pf" checked> prefetch</label>',
+            '<div>mission manual: <input id="kkg-mis" maxlength="1" size="2"> | end: <input id="kkg-end" maxlength="1" size="2"></div>',
+            '<div>len: <input id="kkg-min-len" type="number" value="2" min="1" max="99" style="width:40px;">',
             ' ~ <input id="kkg-max-len" type="number" value="100" min="1" max="100" style="width:40px;"></div>',
-            '<div id="kkg-duel" style="display:none;">시작: <input id="kkg-ds" maxlength="1" size="2"> ',
-            '끝: <input id="kkg-de" maxlength="1" size="2"></div>',
-            '<button id="kkg-go" type="button">매크로 OFF</button>',
-            '<button id="kkg-rst" type="button">라운드 초기화</button>',
-            '</div>'
+            '<div id="kkg-duel" style="display:none;">start: <input id="kkg-ds" maxlength="1" size="2"> ',
+            'end: <input id="kkg-de" maxlength="1" size="2"></div>',
+            '<button id="kkg-go" type="button">macro OFF</button>',
+            '<button id="kkg-rst" type="button">reset</button>',
+            '</div>',
         ].join('');
-
         const css = document.createElement('style');
-        css.textContent = '#kkutu-bot-gui { position: fixed; top: 56px; right: 12px; z-index: 2147483646; width: 210px; background: #0c1018f2; border: 1px solid #3d8bfd55; border-radius: 8px; padding: 8px; font: 12px sans-serif; color: #e8ecf4 } #kkg-h { display: flex; justify-content: space-between; cursor: move; margin-bottom: 6px } #kkg-b { display: flex; flex-direction: column; gap: 4px } .g { color: #6bcf7f } .r { color: #e87878 } #kkg-go.on { background: #1e4620 } #kkutu-bot-gui.min #kkg-b { display: none } #kkg-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #f0ad4e; margin-right: 4px } #kkg-dot.on { background: #5cb85c }';
-
+        css.textContent = '#kkutu-bot-gui{position:fixed;top:56px;right:12px;z-index:2147483646;width:230px;background:#0c1018f2;border:1px solid #3d8bfd55;border-radius:8px;padding:8px;font:12px sans-serif;color:#e8ecf4}#kkg-h{display:flex;justify-content:space-between;cursor:move;margin-bottom:6px}#kkg-b{display:flex;flex-direction:column;gap:4px}.g{color:#6bcf7f}.r{color:#e87878}#kkg-go.on{background:#1e4620}#kkutu-bot-gui.min #kkg-b{display:none}#kkg-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#f0ad4e;margin-right:4px}#kkg-dot.on{background:#5cb85c}';
         document.head.appendChild(css);
         document.body.appendChild(box);
-
         document.getElementById('kkg-host').textContent = location.hostname.slice(0, 14);
         document.getElementById('kkg-go').onclick = () => { S.auto = !S.auto; paint(); };
         document.getElementById('kkg-rst').onclick = () => resetRound();
         document.getElementById('kkg-min').onclick = () => box.classList.toggle('min');
-        document.getElementById('kkg-mis').oninput = (e) => { S.cfg.mission = e.target.value; };
+        document.getElementById('kkg-mis').oninput = (e) => { S.cfg.mission = e.target.value.slice(0, 1); syncMissionGui(); };
         document.getElementById('kkg-end').oninput = (e) => { S.cfg.end = e.target.value; };
         document.getElementById('kkg-atk').onchange = (e) => { S.cfg.attack = e.target.checked; };
         document.getElementById('kkg-man').onchange = (e) => { S.cfg.manner = e.target.checked; };
@@ -525,7 +597,6 @@
         };
         document.getElementById('kkg-min-len').oninput = (e) => { S.cfg.min_length = parseInt(e.target.value, 10) || 2; };
         document.getElementById('kkg-max-len').oninput = (e) => { S.cfg.max_length = parseInt(e.target.value, 10) || 100; };
-
         let drag = false, ox = 0, oy = 0;
         document.getElementById('kkg-h').addEventListener('mousedown', (e) => {
             drag = true;
@@ -540,10 +611,13 @@
             box.style.top = (e.clientY - oy) + 'px';
         });
         document.addEventListener('mouseup', () => { drag = false; });
+        syncMissionGui();
     }
 
     function modeName(m) {
-        return m === MODES.FRONT ? '앞말잇기' : m === MODES.DUEL ? '타자대결' : '끝말잇기';
+        if (m === MODES.FRONT) return 'front';
+        if (m === MODES.DUEL) return 'duel';
+        return 'end';
     }
 
     function paint() {
@@ -551,26 +625,29 @@
         const st = document.getElementById('kkg-st');
         if (!dot) return;
         dot.className = S.on || S.busy ? 'on' : '';
-        st.textContent = !S.dbOk ? 'DB 로드중...' : S.busy ? '탐색중...' : S.on ? (S.auto ? '자동 실행중' : '대기중') : '꺼짐';
-
+        st.textContent = !S.dbOk ? 'loading DB...' : S.busy ? 'searching...' : S.on ? (S.auto ? 'auto ON' : 'idle') : 'off';
         const u = document.getElementById('kkg-used');
         const o = document.getElementById('kkg-ok');
         const f = document.getElementById('kkg-fail');
         const md = document.getElementById('kkg-md');
         const go = document.getElementById('kkg-go');
-
+        const chEl = document.getElementById('kkg-chain');
+        const tmEl = document.getElementById('kkg-time');
+        const scEl = document.getElementById('kkg-score');
+        const lwEl = document.getElementById('kkg-lastw');
         if (u) u.textContent = String(S.used.size);
         if (o) o.textContent = String(S.stat.ok);
         if (f) f.textContent = String(S.stat.fail);
         if (md) md.textContent = modeName(gameMode());
-        if (go) {
-            go.textContent = S.auto ? '매크로 ON' : '매크로 OFF';
-            go.classList.toggle('on', S.auto);
-        }
+        if (go) { go.textContent = S.auto ? 'macro ON' : 'macro OFF'; go.classList.toggle('on', S.auto); }
+        if (chEl) chEl.textContent = String(Math.max(0, S.chain));
+        if (tmEl) tmEl.textContent = String(Math.round(timeRatio() * 100));
+        if (scEl) scEl.textContent = S.lastScore ? String(S.lastScore) : '-';
+        if (lwEl) lwEl.textContent = S.lastWord || '-';
+        syncMissionGui();
     }
 
     function boot() {
-        // 부팅 시 도메인 체크를 한 번 더 수행하여 완벽히 잠금
         if (!allowed()) return;
         if (!document.body) { setTimeout(boot, 50); return; }
         iframeHack();
@@ -581,6 +658,7 @@
             setInterval(scanLogs, 200);
             setInterval(loop, 40);
             setInterval(checkRound, 250);
+            setInterval(readMission, 200);
             setInterval(paint, 400);
         });
         console.log('[KKUTU BOT] test-only booted on:', location.hostname);
