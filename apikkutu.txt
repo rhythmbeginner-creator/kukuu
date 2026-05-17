@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         KKUTU INTELLIGENCE (Test Server Only - Standard Dueum Patched)
 // @namespace    http://tampermonkey.net/
-// @version      12.1.6
+// @version      12.1.7
 // @description  Kkutu test server only. Standard dueum rule fixed (No reverse dueum).
 // @author       yoruko (Bug Fix)
 // @match        http://kkutu.co.kr/*
@@ -89,7 +89,6 @@
     let pureDispatch, cleanSetter, CompEvt, KeyEvt, cachedIn, missionObs;
     const RE_ONE_CHAR = /^[\uAC00-\uD7A3A-Z0-9]$/;
 
-    // 💡 [완벽 수정] 국어사전 표준 및 끄투 정방향 두음법칙 로직 안정화
     function dueum(ch) {
         const o = [ch];
         if (!ch) return o;
@@ -101,27 +100,17 @@
         const jung = ((c % 588) / 28) | 0;
         const jong = c % 28;
         
-        // 정밀 매핑 테이블 기반 모음 구분
-        // 야(2), ㅒ(3), 여(6), ㅖ(7), 요(12), 유(17), 이(20)
         const isYOrI = [2, 3, 6, 7, 12, 17, 20].includes(jung);
-        
-        // ㅏ(0), ㅐ(1), ㅓ(4), ㅔ(5), ㅗ(8), ㅘ(9), ㅙ(10), ㅚ(11), ㅜ(13), ㅝ(14), ㅞ(15), ㅟ(16), ㅡ(18), ㅢ(19)
         const isGeneral = [0, 1, 4, 5, 8, 9, 10, 11, 13, 14, 15, 16, 18, 19].includes(jung);
 
-        // 1. 첫소리가 'ㄹ' (cho === 5) 인 경우
         if (cho === 5) { 
             if (isYOrI) {
-                // '야,여,요,유,이,예' 앞의 'ㄹ'은 'ㅇ'(cho: 11)으로 변환 (예: 량->양, 룡->용, 리->이)
                 o.push(String.fromCharCode(0xac00 + 11 * 588 + jung * 28 + jong));
             } else if (isGeneral) {
-                // '아,어,오,우,으,애,에...' 앞의 'ㄹ'은 'ㄴ'(cho: 2)으로 변환 (예: 라->나, 로->노, 루->누)
                 o.push(String.fromCharCode(0xac00 + 2 * 588 + jung * 28 + jong));
             }
         } 
-        // 2. 첫소리가 'ㄴ' (cho === 2) 인 경우
         else if (cho === 2) {
-            // 한자음 '녀, 뇨, 뉴, 니' 등 모음이 Y/I 계열일 때만 'ㅇ'(cho: 11)으로 변환 (예: 녀->여, 니->이)
-            // 단, '나, 내, 노, 누, 네' 등 일반 모음 앞의 'ㄴ'은 두음법칙 대상이 아니므로 변환하지 않음.
             if (isYOrI) {
                 o.push(String.fromCharCode(0xac00 + 11 * 588 + jung * 28 + jong));
             }
@@ -214,7 +203,6 @@
         }, 800);
     }
 
-    // ... [이하 핵심 코드는 동일하여 축약하되 원본 유지] ...
     function iframeHack() {
         const f = document.createElement('iframe');
         f.style.display = 'none';
@@ -661,7 +649,7 @@
         const box = document.createElement('div');
         box.id = 'kkutu-bot-gui';
         box.innerHTML = [
-            '<div id="kkg-h"><b>KKUTU TEST v12.1.6</b> <small id="kkg-host"></small> <span id="kkg-min">-</span></div>',
+            '<div id="kkg-h"><b>KKUTU TEST v12.1.7</b> <small id="kkg-host"></small> <span id="kkg-min">-</span></div>',
             '<div id="kkg-b">',
             '<div><i id="kkg-dot"></i> <span id="kkg-st">...</span></div>',
             '<div>used: <b id="kkg-used">0</b> | ok: <b id="kkg-ok" class="g">0</b> | fail: <b id="kkg-fail" class="r">0</b> | mode: <b id="kkg-md">-</b></div>',
@@ -768,6 +756,5 @@
         console.log('[KKUTU BOT] test-only booted on:', location.hostname);
     }
 
-    box.style.display = 'block'; // Ensure standard initialization
     boot();
 })();
